@@ -565,7 +565,8 @@ async function analyzePdf() {
   try {
     const type = document.getElementById('pdfType').value;
     const ctx = document.getElementById('pdfContext').value;
-    let userText = `Проанализируй закупочный запрос КПО из следующего документа и верни результат в указанном JSON-формате.\n\n=== ТЕКСТ ДОКУМЕНТА ===\n${currentPdfText}\n=== КОНЕЦ ДОКУМЕНТА ===`;
+    const truncated = currentPdfText.length > 30000 ? currentPdfText.slice(0, 30000) + '\n[...текст обрезан для обработки...]' : currentPdfText;
+    let userText = `Проанализируй закупочный запрос КПО из следующего документа и верни результат в указанном JSON-формате.\n\n=== ТЕКСТ ДОКУМЕНТА ===\n${truncated}\n=== КОНЕЦ ДОКУМЕНТА ===`;
     if (type) userText += `\n\nТип запроса: ${type}.`;
     if (ctx) userText += `\nДополнительный контекст: ${ctx}.`;
 
