@@ -521,25 +521,25 @@ async function callClaude(messages, extraHeaders = {}) {
     messages
   };
 
+  const proxyUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'https://api.anthropic.com/v1/messages'
+    : '/api/proxy';
+
   let resp;
   try {
-    resp = await fetch('https://api.anthropic.com/v1/messages', {
+    resp = await fetch(proxyUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': key,
         'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true',
+        ...(proxyUrl.includes('anthropic.com') ? { 'anthropic-dangerous-direct-browser-calls': 'true' } : {}),
         ...extraHeaders
       },
       body: JSON.stringify(body)
     });
   } catch (networkErr) {
-    throw new Error(
-      'Не удалось подключиться к Anthropic API. ' +
-      'Убедитесь, что браузер не блокирует запрос (CORS / VPN / firewall). ' +
-      'Детали: ' + networkErr.message
-    );
+    throw new Error('Сетевая ошибка: ' + networkErr.message);
   }
 
   if (!resp.ok) {
