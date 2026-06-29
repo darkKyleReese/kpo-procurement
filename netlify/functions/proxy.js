@@ -6,60 +6,66 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-function httpsPost(options, body) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: data }));
-    });
-    req.on('error', reject);
-    req.setTimeout(25000, () => { req.destroy(new Error('timeout')); });
-    req.write(body);
-    req.end();
-  });
-}
-
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' };
   }
 
-  try {
-    const apiKey = event.headers['x-api-key'] || event.headers['X-Api-Key'];
-    if (!apiKey) {
-      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: { message: 'Missing x-api-key header' } }) };
-    }
+  const apiKey = event.headers['x-api-key'] || event.headers['X-Api-Key'];
+  if (!apiKey) {
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: { message: 'Missing x-api-key' } }) };
+  }
 
-    const reqHeaders = {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': event.headers['anthropic-version'] || '2023-06-01',
-    };
-    if (event.headers['anthropic-beta']) {
-      reqHeaders['anthropic-beta'] = event.headers['anthropic-beta'];
-    }
+  // Netlify sometimes base64-encodes the body
+  const rawBody = event.isBase64Encoded
+    ? Buffer.from(event.body, 'base64').toString('utf8')
+    : (event.body || '{}');
 
-    const bodyStr = event.body || '{}';
-    reqHeaders['Content-Length'] = Buffer.byteLength(bodyStr);
+  return new Promise((resolve) => {
+    const bodyBuf = Buffer.from(rawBody, 'utf8');
 
-    const result = await httpsPost({
+    const options = {
       hostname: 'api.anthropic.com',
       path: '/v1/messages',
       method: 'POST',
-      headers: reqHeaders,
-    }, bodyStr);
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': bodyBuf.length,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+    };
 
-    return {
-      statusCode: result.status,
-      headers: { ...CORS, 'Content-Type': 'application/json' },
-      body: result.body,
-    };
-  } catch (err) {
-    return {
-      statusCode: 500,
-      headers: { ...CORS, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: { message: err.message } }),
-    };
-  }
+    const req = https.request(options, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          headers: { ...CORS, 'Content-Type': 'application/json' },
+          body: Buffer.concat(chunks).toString('utf8'),
+        });
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({
+        statusCode: 500,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: { message: err.message } }),
+      });
+    });
+
+    req.setTimeout(24000, () => {
+      req.destroy();
+      resolve({
+        statusCode: 504,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: { message: 'Request to Anthropic timed out' } }),
+      });
+    });
+
+    req.write(bodyBuf);
+    req.end();
+  });
 };
