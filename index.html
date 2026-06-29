@@ -466,57 +466,20 @@ function setLoading(btnId, loading) {
   }
 }
 
-const SYSTEM_PROMPT = `Ты — AI-агент анализа закупочных запросов для Комитета по закупкам КПО (Карачаганакское нефтегазовое предприятие), работающего в рамках Соглашения о Разделе Продукции (ОСРП / PSA).
+const SYSTEM_PROMPT = `Ты — AI-агент анализа закупок КПО (PSA/ОСРП). Отвечай ТОЛЬКО валидным JSON без пояснений.
 
-Твоя задача — дать структурированный анализ закупочного запроса и помочь членам комитета принять взвешенное решение.
+Пороги КПО: <$500K=упрощённый; $500K-$5M=Комитет; >$5M=Совет/JMC; Sole Source=обоснование; продление>2лет=ревью.
 
-Пороги утверждения КПО:
-- До $500K: упрощённый порядок
-- $500K–$5M: Комитет по закупкам
-- Свыше $5M: Совет / JMC
-- Sole Source (любая сумма): требует обоснования
-- Продление свыше 2 лет: ревью обязателен
-
-Обязательно отвечай ТОЛЬКО валидным JSON в точно следующем формате:
-{
-  "type": "тип запроса",
-  "reference": "номер/референс",
-  "amount_usd": число или null,
-  "duration_months": число или null,
-  "procurement_method": "метод",
-  "approval_level": "уровень утверждения",
-  "verdict": "ОДОБРИТЬ" | "ОТКЛОНИТЬ" | "НА ДОРАБОТКУ",
-  "verdict_reason": "главная причина вердикта (1 предложение)",
-  "criteria": [
-    {"name": "Процедура ОСРП", "score": 1-10, "comment": ""},
-    {"name": "Цена / Value for Money", "score": 1-10, "comment": ""},
-    {"name": "Конкурентная среда", "score": 1-10, "comment": ""},
-    {"name": "KZ-контент", "score": 1-10, "comment": ""},
-    {"name": "Риск поставщика", "score": 1-10, "comment": ""}
-  ],
-  "psa_checks": [
-    {"name": "Соответствие процедурам ОСРП/PSA", "status": "ok"|"warn"|"fail", "note": ""},
-    {"name": "KZ-контент и локализация", "status": "ok"|"warn"|"fail", "note": ""},
-    {"name": "Конкурентная среда рынка", "status": "ok"|"warn"|"fail", "note": ""},
-    {"name": "Обоснованность цены (VfM)", "status": "ok"|"warn"|"fail", "note": ""},
-    {"name": "Квалификация поставщика/участников", "status": "ok"|"warn"|"fail", "note": ""},
-    {"name": "Консорциумное одобрение", "status": "ok"|"warn"|"fail", "note": ""}
-  ],
-  "risks": [
-    {"level": "high"|"medium"|"low", "title": "", "description": ""}
-  ],
-  "questions": ["вопрос 1", "вопрос 2", "вопрос 3", "вопрос 4", "вопрос 5"],
-  "alternative": "альтернативный сценарий если риски высоки, или null",
-  "recommendation": "итоговая позиция для голосования, 3-4 предложения"
-}`;
+JSON-структура (заполни все поля):
+{"type":"","reference":"","amount_usd":null,"duration_months":null,"procurement_method":"","approval_level":"","verdict":"ОДОБРИТЬ|ОТКЛОНИТЬ|НА ДОРАБОТКУ","verdict_reason":"","criteria":[{"name":"Процедура ОСРП","score":0,"comment":""},{"name":"Цена/VfM","score":0,"comment":""},{"name":"Конкурентная среда","score":0,"comment":""},{"name":"KZ-контент","score":0,"comment":""},{"name":"Риск поставщика","score":0,"comment":""}],"psa_checks":[{"name":"Соответствие ОСРП/PSA","status":"ok","note":""},{"name":"KZ-контент","status":"ok","note":""},{"name":"Конкурентная среда","status":"ok","note":""},{"name":"Цена (VfM)","status":"ok","note":""},{"name":"Квалификация поставщика","status":"ok","note":""},{"name":"Консорциумное одобрение","status":"ok","note":""}],"risks":[{"level":"high|medium|low","title":"","description":""}],"questions":["","","","",""],"alternative":null,"recommendation":""}`;
 
 async function callClaude(messages, extraHeaders = {}) {
   const key = getApiKey();
   if (!key) throw new Error('Введите Anthropic API Key');
 
   const body = {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1500,
     system: SYSTEM_PROMPT,
     messages
   };
@@ -565,7 +528,7 @@ async function analyzePdf() {
   try {
     const type = document.getElementById('pdfType').value;
     const ctx = document.getElementById('pdfContext').value;
-    const truncated = currentPdfText.length > 20000 ? currentPdfText.slice(0, 20000) + '\n[...текст обрезан...]' : currentPdfText;
+    const truncated = currentPdfText.length > 5000 ? currentPdfText.slice(0, 5000) + '\n[...текст обрезан...]' : currentPdfText;
     let userText = `Проанализируй закупочный запрос КПО из следующего документа и верни результат в указанном JSON-формате.\n\n=== ТЕКСТ ДОКУМЕНТА ===\n${truncated}\n=== КОНЕЦ ДОКУМЕНТА ===`;
     if (type) userText += `\n\nТип запроса: ${type}.`;
     if (ctx) userText += `\nДополнительный контекст: ${ctx}.`;
