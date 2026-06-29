@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>КПО — AI-агент анализа закупок</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root {
     --primary: #1a3a6b;
@@ -387,7 +388,23 @@
 
 <script>
 let currentAnalysis = null;
-let currentPdfBase64 = null;
+let currentPdfText = null;
+let currentPdfFileName = null;
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+async function extractPdfText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(item => item.str).join(' ') + '\n';
+  }
+  return text.trim();
+}
 
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -413,12 +430,15 @@ function onFileSelect(input) {
 
 function loadPdfFile(file) {
   if (file.size > 20 * 1024 * 1024) { showError('pdfError', 'Файл превышает 20 МБ'); return; }
-  document.getElementById('fileName').textContent = file.name;
-  const reader = new FileReader();
-  reader.onload = e => {
-    currentPdfBase64 = e.target.result.split(',')[1];
-  };
-  reader.readAsDataURL(file);
+  currentPdfFileName = file.name;
+  currentPdfText = null;
+  document.getElementById('fileName').textContent = '⏳ Читаю PDF...';
+  extractPdfText(file).then(text => {
+    currentPdfText = text;
+    document.getElementById('fileName').textContent = '✅ ' + file.name;
+  }).catch(err => {
+    document.getElementById('fileName').textContent = '❌ Ошибка чтения: ' + err.message;
+  });
 }
 
 function getApiKey() {
@@ -533,7 +553,10 @@ async function callClaude(messages, extraHeaders = {}) {
 
 async function analyzePdf() {
   clearError('pdfError');
-  if (!currentPdfBase64) { showError('pdfError', 'Выберите PDF-файл'); return; }
+  if (!currentPdfText) {
+    showError('pdfError', currentPdfFileName ? 'Подождите, PDF ещё читается...' : 'Выберите PDF-файл');
+    return;
+  }
   if (!getApiKey()) { showError('pdfError', 'Введите Anthropic API Key'); return; }
 
   setLoading('btnAnalyzePdf', true);
@@ -542,19 +565,12 @@ async function analyzePdf() {
   try {
     const type = document.getElementById('pdfType').value;
     const ctx = document.getElementById('pdfContext').value;
-    let userText = 'Проанализируй этот закупочный запрос КПО и верни результат в указанном JSON-формате.';
-    if (type) userText += ` Тип запроса: ${type}.`;
-    if (ctx) userText += ` Дополнительный контекст: ${ctx}.`;
+    let userText = `Проанализируй закупочный запрос КПО из следующего документа и верни результат в указанном JSON-формате.\n\n=== ТЕКСТ ДОКУМЕНТА ===\n${currentPdfText}\n=== КОНЕЦ ДОКУМЕНТА ===`;
+    if (type) userText += `\n\nТип запроса: ${type}.`;
+    if (ctx) userText += `\nДополнительный контекст: ${ctx}.`;
 
-    const messages = [{
-      role: 'user',
-      content: [
-        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: currentPdfBase64 } },
-        { type: 'text', text: userText }
-      ]
-    }];
-
-    const raw = await callClaude(messages, { 'anthropic-beta': 'pdfs-2024-09-25' });
+    const messages = [{ role: 'user', content: userText }];
+    const raw = await callClaude(messages);
     const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0]);
     currentAnalysis = json;
     renderResults(json);
@@ -703,19 +719,8 @@ async function generateAction(type) {
       role: 'user',
       content: `Результаты анализа:\n${summary}\n\n${prompts[type]}`
     }];
-
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true'
-      },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2048, messages })
-    });
-    const data = await resp.json();
-    out.textContent = data.content[0].text;
+    const text = await callClaude(messages);
+    out.textContent = text;
   } catch(e) {
     out.textContent = 'Ошибка: ' + e.message;
   }
