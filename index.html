@@ -58,6 +58,70 @@
   }
   .api-bar input:focus { outline: 2px solid var(--primary); }
 
+  /* Regulatory Base */
+  .reg-bar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin-bottom: 16px;
+  }
+  .reg-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary);
+  }
+  .reg-badge {
+    background: var(--primary);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 2px;
+  }
+  .reg-toggle { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .reg-slots { display: flex; flex-direction: column; gap: 10px; }
+  .reg-slot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex-wrap: wrap;
+  }
+  .reg-slot-label { font-size: 13px; font-weight: 600; color: var(--text); min-width: 200px; }
+  .reg-status { font-size: 12px; color: var(--muted); flex: 1; }
+  .reg-upload-btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .reg-upload-btn:hover { opacity: 0.88; }
+  .reg-del-btn {
+    background: none;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .reg-del-btn:hover { background: #fdf0ef; }
+
   .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
   .tab {
     padding: 9px 20px;
@@ -236,6 +300,37 @@
   <div class="api-bar">
     <label>🔑 Anthropic API Key</label>
     <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off">
+  </div>
+
+  <!-- Regulatory Docs -->
+  <div class="reg-bar" id="regBar">
+    <div class="reg-header" onclick="toggleRegBar()">
+      <span id="regBarTitle">📚 Нормативная база</span>
+      <span id="regBarBadge" class="reg-badge">0/3</span>
+      <span class="reg-toggle" id="regToggle">▼</span>
+    </div>
+    <div id="regContent" style="display:none; margin-top:14px;">
+      <div class="reg-slots">
+        <div class="reg-slot" id="regSlot0">
+          <span class="reg-slot-label">ОСРП / PSA</span>
+          <span class="reg-status" id="regStatus0">❌ не загружен</span>
+          <label class="reg-upload-btn">Выбрать PDF<input type="file" accept="application/pdf" onchange="loadRegDoc(0, this)" style="display:none"></label>
+          <button class="reg-del-btn" id="regDel0" onclick="deleteRegDoc(0)" style="display:none">Удалить</button>
+        </div>
+        <div class="reg-slot" id="regSlot1">
+          <span class="reg-slot-label">ССД (Система снабжения)</span>
+          <span class="reg-status" id="regStatus1">❌ не загружен</span>
+          <label class="reg-upload-btn">Выбрать PDF<input type="file" accept="application/pdf" onchange="loadRegDoc(1, this)" style="display:none"></label>
+          <button class="reg-del-btn" id="regDel1" onclick="deleteRegDoc(1)" style="display:none">Удалить</button>
+        </div>
+        <div class="reg-slot" id="regSlot2">
+          <span class="reg-slot-label">Тендерные процедуры КПО</span>
+          <span class="reg-status" id="regStatus2">❌ не загружен</span>
+          <label class="reg-upload-btn">Выбрать PDF<input type="file" accept="application/pdf" onchange="loadRegDoc(2, this)" style="display:none"></label>
+          <button class="reg-del-btn" id="regDel2" onclick="deleteRegDoc(2)" style="display:none">Удалить</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Tabs -->
@@ -466,6 +561,73 @@ function setLoading(btnId, loading) {
   }
 }
 
+// ===== REGULATORY DOCS =====
+const REG_LABELS = ['ОСРП/PSA', 'ССД', 'Тендерные процедуры'];
+
+function toggleRegBar() {
+  const content = document.getElementById('regContent');
+  const toggle = document.getElementById('regToggle');
+  const open = content.style.display !== 'none';
+  content.style.display = open ? 'none' : 'block';
+  toggle.textContent = open ? '▼' : '▲';
+}
+
+function updateRegBadge() {
+  let count = 0;
+  for (let i = 0; i < 3; i++) if (localStorage.getItem('regdoc_' + i)) count++;
+  document.getElementById('regBarBadge').textContent = count + '/3';
+}
+
+function loadRegDoc(idx, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('regStatus' + idx);
+  statusEl.textContent = '⏳ Читаю...';
+  extractPdfText(file).then(text => {
+    const trimmed = text.slice(0, 4000);
+    localStorage.setItem('regdoc_' + idx, trimmed);
+    localStorage.setItem('regdoc_name_' + idx, file.name);
+    statusEl.textContent = '✅ ' + file.name + ' — ' + trimmed.length + ' символов';
+    document.getElementById('regDel' + idx).style.display = '';
+    updateRegBadge();
+  }).catch(err => {
+    statusEl.textContent = '❌ Ошибка: ' + err.message;
+  });
+}
+
+function deleteRegDoc(idx) {
+  localStorage.removeItem('regdoc_' + idx);
+  localStorage.removeItem('regdoc_name_' + idx);
+  document.getElementById('regStatus' + idx).textContent = '❌ не загружен';
+  document.getElementById('regDel' + idx).style.display = 'none';
+  updateRegBadge();
+}
+
+function restoreRegDocs() {
+  for (let i = 0; i < 3; i++) {
+    const text = localStorage.getItem('regdoc_' + i);
+    const name = localStorage.getItem('regdoc_name_' + i);
+    if (text && name) {
+      document.getElementById('regStatus' + i).textContent = '✅ ' + name + ' — ' + text.length + ' символов';
+      document.getElementById('regDel' + i).style.display = '';
+    }
+  }
+  updateRegBadge();
+}
+
+function buildRegContext() {
+  const parts = [];
+  for (let i = 0; i < 3; i++) {
+    const text = localStorage.getItem('regdoc_' + i);
+    if (text) parts.push('[' + REG_LABELS[i] + ']: ' + text);
+  }
+  if (!parts.length) return '';
+  return '=== НОРМАТИВНАЯ БАЗА ===\n' + parts.join('\n\n') + '\n=== КОНЕЦ НОРМАТИВНОЙ БАЗЫ ===\n\nПри анализе сверяйся с нормативной базой выше.\n\n';
+}
+
+restoreRegDocs();
+// ===== END REGULATORY DOCS =====
+
 const SYSTEM_PROMPT = `Ты — AI-агент анализа закупок КПО (PSA/ОСРП). Отвечай ТОЛЬКО валидным JSON без пояснений.
 
 Пороги КПО: <$500K=упрощённый; $500K-$5M=Комитет; >$5M=Совет/JMC; Sole Source=обоснование; продление>2лет=ревью.
@@ -525,7 +687,7 @@ async function callClaude(messages, extraHeaders = {}) {
   const body = {
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 2048,
-    system: SYSTEM_PROMPT,
+    system: buildRegContext() + SYSTEM_PROMPT,
     messages
   };
 
