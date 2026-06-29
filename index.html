@@ -473,13 +473,58 @@ const SYSTEM_PROMPT = `Ты — AI-агент анализа закупок КП
 JSON-структура (заполни все поля):
 {"type":"","reference":"","amount_usd":null,"duration_months":null,"procurement_method":"","approval_level":"","verdict":"ОДОБРИТЬ|ОТКЛОНИТЬ|НА ДОРАБОТКУ","verdict_reason":"","criteria":[{"name":"Процедура ОСРП","score":0,"comment":""},{"name":"Цена/VfM","score":0,"comment":""},{"name":"Конкурентная среда","score":0,"comment":""},{"name":"KZ-контент","score":0,"comment":""},{"name":"Риск поставщика","score":0,"comment":""}],"psa_checks":[{"name":"Соответствие ОСРП/PSA","status":"ok","note":""},{"name":"KZ-контент","status":"ok","note":""},{"name":"Конкурентная среда","status":"ok","note":""},{"name":"Цена (VfM)","status":"ok","note":""},{"name":"Квалификация поставщика","status":"ok","note":""},{"name":"Консорциумное одобрение","status":"ok","note":""}],"risks":[{"level":"high|medium|low","title":"","description":""}],"questions":["","","","",""],"alternative":null,"recommendation":""}`;
 
+function parseJsonSafe(raw) {
+  // Extract JSON object from response
+  const match = raw.match(/\{[\s\S]*/);
+  if (!match) throw new Error('Модель не вернула JSON. Попробуйте ещё раз.');
+  let str = match[0];
+
+  // Try parsing as-is first
+  try { return JSON.parse(str); } catch (_) {}
+
+  // Fix truncated JSON: close open strings, arrays, objects
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inStr) { escape = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') depth--;
+  }
+  // Close any open string
+  if (inStr) str += '"';
+  // Remove trailing comma if any
+  str = str.replace(/,\s*$/, '');
+  // Close open structures
+  const stack = [];
+  inStr = false; escape = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inStr) { escape = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{') stack.push('}');
+    else if (c === '[') stack.push(']');
+    else if (c === '}' || c === ']') stack.pop();
+  }
+  str += stack.reverse().join('');
+  try { return JSON.parse(str); } catch (e) {
+    throw new Error('Не удалось разобрать ответ модели. Попробуйте ещё раз.');
+  }
+}
+
 async function callClaude(messages, extraHeaders = {}) {
   const key = getApiKey();
   if (!key) throw new Error('Введите Anthropic API Key');
 
   const body = {
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1500,
+    max_tokens: 2048,
     system: SYSTEM_PROMPT,
     messages
   };
@@ -535,7 +580,7 @@ async function analyzePdf() {
 
     const messages = [{ role: 'user', content: userText }];
     const raw = await callClaude(messages);
-    const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0]);
+    const json = parseJsonSafe(raw);
     currentAnalysis = json;
     renderResults(json);
   } catch(e) {
@@ -575,7 +620,7 @@ async function analyzeManual() {
 
     const messages = [{ role: 'user', content: userText }];
     const raw = await callClaude(messages);
-    const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0]);
+    const json = parseJsonSafe(raw);
     currentAnalysis = json;
     renderResults(json);
   } catch(e) {
