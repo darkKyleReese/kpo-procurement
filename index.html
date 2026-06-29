@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>КПО — AI-агент анализа закупок</title>
+<style>
+  :root {
+    --primary: #1a3a6b;
+    --accent: #c8a84b;
+    --danger: #c0392b;
+    --warn: #e67e22;
+    --ok: #27ae60;
+    --bg: #f4f6fa;
+    --card: #ffffff;
+    --border: #d0d7e3;
+    --text: #1c2a3a;
+    --muted: #6b7a90;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: var(--primary);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  header .logo { font-size: 22px; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+  header .subtitle { font-size: 13px; opacity: 0.75; margin-top: 2px; }
+
+  .container { max-width: 1000px; margin: 0 auto; padding: 32px 16px; }
+
+  .api-bar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .api-bar label { font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .api-bar input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: monospace;
+    color: var(--text);
+    background: var(--bg);
+  }
+  .api-bar input:focus { outline: 2px solid var(--primary); }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tab {
+    padding: 9px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    transition: all .15s;
+  }
+  .tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 48px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+  }
+  .drop-zone.over { border-color: var(--primary); background: #eef1f9; }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .drop-zone .icon { font-size: 40px; margin-bottom: 12px; }
+  .drop-zone p { color: var(--muted); font-size: 14px; }
+  .drop-zone .file-name { margin-top: 8px; font-weight: 600; color: var(--primary); font-size: 14px; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .form-group input, .form-group select, .form-group textarea {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg);
+    font-family: inherit;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: 2px solid var(--primary); }
+  .form-group.full { grid-column: 1 / -1; }
+  textarea { resize: vertical; min-height: 80px; }
+
+  .optional-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all .15s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: #0f2850; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-secondary { background: var(--card); border: 1px solid var(--border); color: var(--text); }
+  .btn-secondary:hover { background: var(--bg); }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-accent:hover { filter: brightness(0.9); }
+
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Results */
+  .verdict-banner {
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .verdict-banner.approve { background: #eafaf1; border: 1px solid var(--ok); }
+  .verdict-banner.reject { background: #fdedec; border: 1px solid var(--danger); }
+  .verdict-banner.rework { background: #fef9e7; border: 1px solid var(--warn); }
+  .verdict-icon { font-size: 36px; }
+  .verdict-label { font-size: 22px; font-weight: 700; }
+  .verdict-reason { font-size: 14px; margin-top: 4px; opacity: .8; }
+
+  .criteria-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .criterion { background: var(--bg); border-radius: 8px; padding: 14px 16px; }
+  .criterion-name { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
+  .criterion-score { font-size: 20px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
+  .score-bar { height: 6px; background: #e0e5ef; border-radius: 3px; overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 3px; background: var(--primary); transition: width .5s; }
+
+  .section-title { font-size: 14px; font-weight: 700; color: var(--primary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: .5px; }
+
+  .checks-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .check-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 8px; font-size: 14px; }
+  .check-item.ok { background: #eafaf1; }
+  .check-item.warn { background: #fef9e7; }
+  .check-item.fail { background: #fdedec; }
+  .check-icon { font-size: 16px; margin-top: 1px; flex-shrink: 0; }
+
+  .risks-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .risk-item { display: flex; gap: 10px; padding: 12px 14px; border-radius: 8px; border-left: 4px solid; font-size: 14px; background: var(--bg); }
+  .risk-item.high { border-color: var(--danger); }
+  .risk-item.medium { border-color: var(--warn); }
+  .risk-item.low { border-color: var(--ok); }
+  .risk-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; white-space: nowrap; align-self: flex-start; margin-top: 2px; }
+  .risk-badge.high { background: #fdedec; color: var(--danger); }
+  .risk-badge.medium { background: #fef9e7; color: var(--warn); }
+  .risk-badge.low { background: #eafaf1; color: var(--ok); }
+
+  .questions-list { counter-reset: q; display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .question-item {
+    display: flex; gap: 12px; padding: 12px 14px;
+    background: var(--bg); border-radius: 8px; font-size: 14px;
+  }
+  .question-item::before { counter-increment: q; content: counter(q); font-weight: 700; color: var(--primary); flex-shrink: 0; }
+
+  .recommendation-box { background: #eef2fa; border: 1px solid #c2cfe0; border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.65; margin-bottom: 20px; }
+
+  .action-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .action-output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    margin-top: 12px;
+    display: none;
+  }
+  .action-output.visible { display: block; }
+
+  .error-msg { background: #fdedec; border: 1px solid var(--danger); border-radius: 8px; padding: 14px; color: var(--danger); font-size: 14px; margin-top: 12px; }
+
+  #results { display: none; }
+  #results.visible { display: block; }
+
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .meta-item { background: var(--bg); border-radius: 8px; padding: 12px 14px; }
+  .meta-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .meta-value { font-size: 14px; font-weight: 600; margin-top: 3px; }
+
+  .alternative-box { background: #fdf6e9; border: 1px solid #f0d080; border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.65; margin-bottom: 20px; }
+
+  @media (max-width: 600px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .criteria-grid { grid-template-columns: 1fr; }
+    .action-buttons { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">КПО · Закупки</div>
+    <div class="subtitle">AI-агент анализа закупочных запросов</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- API Key -->
+  <div class="api-bar">
+    <label>🔑 Anthropic API Key</label>
+    <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off">
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('pdf')">📄 Загрузка PDF</button>
+    <button class="tab" onclick="switchTab('manual')">✏️ Ручной ввод</button>
+  </div>
+
+  <!-- PDF Tab -->
+  <div id="tab-pdf">
+    <div class="card">
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="pdfFile" accept="application/pdf" onchange="onFileSelect(this)">
+        <div class="icon">📋</div>
+        <p>Перетащите PDF-документ сюда или нажмите для выбора</p>
+        <p style="font-size:12px; margin-top:6px;">Максимальный размер: 20 МБ</p>
+        <div class="file-name" id="fileName"></div>
+      </div>
+
+      <div style="margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label>Тип запроса (необязательно)</label>
+          <select id="pdfType">
+            <option value="">Определить автоматически</option>
+            <option value="Контрактная стратегия">Контрактная стратегия</option>
+            <option value="Тендерный лист">Тендерный лист</option>
+            <option value="Присуждение контракта">Присуждение контракта</option>
+            <option value="Продление договора">Продление договора</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Дополнительный контекст (необязательно)</label>
+          <input type="text" id="pdfContext" placeholder="Особые обстоятельства, срочность...">
+        </div>
+      </div>
+
+      <div style="margin-top:16px; display:flex; gap:10px; align-items:center;">
+        <button class="btn btn-primary" onclick="analyzePdf()" id="btnAnalyzePdf">
+          <span>Анализировать</span>
+        </button>
+        <span id="pdfError" class="error-msg" style="display:none;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manual Tab -->
+  <div id="tab-manual" style="display:none;">
+    <div class="card">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Тип запроса *</label>
+          <select id="mType" required>
+            <option value="">Выберите тип</option>
+            <option>Контрактная стратегия</option>
+            <option>Тендерный лист</option>
+            <option>Присуждение контракта</option>
+            <option>Продление договора</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Референс / Номер</label>
+          <input type="text" id="mRef" placeholder="KPO-2024-001">
+        </div>
+        <div class="form-group">
+          <label>Сумма (USD)</label>
+          <input type="number" id="mAmount" placeholder="1500000">
+        </div>
+        <div class="form-group">
+          <label>Срок контракта (мес.)</label>
+          <input type="number" id="mDuration" placeholder="24">
+        </div>
+        <div class="form-group">
+          <label>Категория услуг / товаров</label>
+          <input type="text" id="mCategory" placeholder="Буровые услуги, IT, Логистика...">
+        </div>
+        <div class="form-group">
+          <label>Метод закупа</label>
+          <select id="mMethod">
+            <option value="">Выберите метод</option>
+            <option>Открытый тендер</option>
+            <option>Ограниченный тендер</option>
+            <option>Прямое заключение (Sole Source)</option>
+            <option>Запрос котировок (RFQ)</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label>Описание запроса</label>
+          <textarea id="mDesc" placeholder="Обоснование, состав участников, условия, ключевые факторы..."></textarea>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:10px; align-items:center;">
+        <button class="btn btn-primary" onclick="analyzeManual()" id="btnAnalyzeManual">
+          <span>Анализировать</span>
+        </button>
+        <span id="manualError" class="error-msg" style="display:none;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    <div id="verdictBanner" class="verdict-banner">
+      <div class="verdict-icon" id="verdictIcon"></div>
+      <div>
+        <div class="verdict-label" id="verdictLabel"></div>
+        <div class="verdict-reason" id="verdictReason"></div>
+      </div>
+    </div>
+
+    <!-- Meta -->
+    <div class="meta-grid" id="metaGrid"></div>
+
+    <div class="card">
+      <!-- Criteria -->
+      <div class="section-title">Оценка по критериям</div>
+      <div class="criteria-grid" id="criteriaGrid"></div>
+
+      <!-- PSA checks -->
+      <div class="section-title" style="margin-top:20px;">Проверки соответствия ОСРП</div>
+      <div class="checks-list" id="checksList"></div>
+
+      <!-- Risks -->
+      <div class="section-title">Реестр рисков</div>
+      <div class="risks-list" id="risksList"></div>
+
+      <!-- Questions -->
+      <div class="section-title">Вопросы инициатору</div>
+      <div class="questions-list" id="questionsList"></div>
+
+      <!-- Alternative -->
+      <div class="section-title" id="altTitle" style="display:none;">Альтернативный сценарий</div>
+      <div class="alternative-box" id="altBox" style="display:none;"></div>
+
+      <!-- Recommendation -->
+      <div class="section-title">Рекомендация для голосования</div>
+      <div class="recommendation-box" id="recommendationBox"></div>
+
+      <!-- Actions -->
+      <div class="section-title">Действия</div>
+      <div class="action-buttons">
+        <button class="btn btn-secondary" onclick="generateAction('memo')">📝 Memo для протокола</button>
+        <button class="btn btn-secondary" onclick="generateAction('conditions')">✅ Условия одобрения</button>
+        <button class="btn btn-secondary" onclick="generateAction('position')">🎤 Позиция на комитете</button>
+      </div>
+      <div class="action-output" id="actionOutput"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let currentAnalysis = null;
+let currentPdfBase64 = null;
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('[id^="tab-"]').forEach(t => t.style.display = 'none');
+  document.getElementById('tab-' + tab).style.display = 'block';
+  event.target.classList.add('active');
+}
+
+// Drag & drop
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') loadPdfFile(file);
+});
+
+function onFileSelect(input) {
+  if (input.files[0]) loadPdfFile(input.files[0]);
+}
+
+function loadPdfFile(file) {
+  if (file.size > 20 * 1024 * 1024) { showError('pdfError', 'Файл превышает 20 МБ'); return; }
+  document.getElementById('fileName').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    currentPdfBase64 = e.target.result.split(',')[1];
+  };
+  reader.readAsDataURL(file);
+}
+
+function getApiKey() {
+  return document.getElementById('apiKey').value.trim();
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'inline-block';
+}
+function clearError(id) {
+  const el = document.getElementById(id);
+  el.style.display = 'none';
+}
+
+function setLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div><span>Анализирую...</span>';
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = '<span>Анализировать</span>';
+  }
+}
+
+const SYSTEM_PROMPT = `Ты — AI-агент анализа закупочных запросов для Комитета по закупкам КПО (Карачаганакское нефтегазовое предприятие), работающего в рамках Соглашения о Разделе Продукции (ОСРП / PSA).
+
+Твоя задача — дать структурированный анализ закупочного запроса и помочь членам комитета принять взвешенное решение.
+
+Пороги утверждения КПО:
+- До $500K: упрощённый порядок
+- $500K–$5M: Комитет по закупкам
+- Свыше $5M: Совет / JMC
+- Sole Source (любая сумма): требует обоснования
+- Продление свыше 2 лет: ревью обязателен
+
+Обязательно отвечай ТОЛЬКО валидным JSON в точно следующем формате:
+{
+  "type": "тип запроса",
+  "reference": "номер/референс",
+  "amount_usd": число или null,
+  "duration_months": число или null,
+  "procurement_method": "метод",
+  "approval_level": "уровень утверждения",
+  "verdict": "ОДОБРИТЬ" | "ОТКЛОНИТЬ" | "НА ДОРАБОТКУ",
+  "verdict_reason": "главная причина вердикта (1 предложение)",
+  "criteria": [
+    {"name": "Процедура ОСРП", "score": 1-10, "comment": ""},
+    {"name": "Цена / Value for Money", "score": 1-10, "comment": ""},
+    {"name": "Конкурентная среда", "score": 1-10, "comment": ""},
+    {"name": "KZ-контент", "score": 1-10, "comment": ""},
+    {"name": "Риск поставщика", "score": 1-10, "comment": ""}
+  ],
+  "psa_checks": [
+    {"name": "Соответствие процедурам ОСРП/PSA", "status": "ok"|"warn"|"fail", "note": ""},
+    {"name": "KZ-контент и локализация", "status": "ok"|"warn"|"fail", "note": ""},
+    {"name": "Конкурентная среда рынка", "status": "ok"|"warn"|"fail", "note": ""},
+    {"name": "Обоснованность цены (VfM)", "status": "ok"|"warn"|"fail", "note": ""},
+    {"name": "Квалификация поставщика/участников", "status": "ok"|"warn"|"fail", "note": ""},
+    {"name": "Консорциумное одобрение", "status": "ok"|"warn"|"fail", "note": ""}
+  ],
+  "risks": [
+    {"level": "high"|"medium"|"low", "title": "", "description": ""}
+  ],
+  "questions": ["вопрос 1", "вопрос 2", "вопрос 3", "вопрос 4", "вопрос 5"],
+  "alternative": "альтернативный сценарий если риски высоки, или null",
+  "recommendation": "итоговая позиция для голосования, 3-4 предложения"
+}`;
+
+async function callClaude(messages, onChunk) {
+  const key = getApiKey();
+  if (!key) throw new Error('Введите Anthropic API Key');
+
+  const body = {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4096,
+    system: SYSTEM_PROMPT,
+    messages
+  };
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-calls': 'true'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  return data.content[0].text;
+}
+
+async function analyzePdf() {
+  clearError('pdfError');
+  if (!currentPdfBase64) { showError('pdfError', 'Выберите PDF-файл'); return; }
+  if (!getApiKey()) { showError('pdfError', 'Введите Anthropic API Key'); return; }
+
+  setLoading('btnAnalyzePdf', true);
+  hideResults();
+
+  try {
+    const type = document.getElementById('pdfType').value;
+    const ctx = document.getElementById('pdfContext').value;
+    let userText = 'Проанализируй этот закупочный запрос КПО и верни результат в указанном JSON-формате.';
+    if (type) userText += ` Тип запроса: ${type}.`;
+    if (ctx) userText += ` Дополнительный контекст: ${ctx}.`;
+
+    const messages = [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: currentPdfBase64 } },
+        { type: 'text', text: userText }
+      ]
+    }];
+
+    const raw = await callClaude(messages);
+    const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0]);
+    currentAnalysis = json;
+    renderResults(json);
+  } catch(e) {
+    showError('pdfError', e.message);
+  } finally {
+    setLoading('btnAnalyzePdf', false);
+  }
+}
+
+async function analyzeManual() {
+  clearError('manualError');
+  const type = document.getElementById('mType').value;
+  if (!type) { showError('manualError', 'Выберите тип запроса'); return; }
+  if (!getApiKey()) { showError('manualError', 'Введите Anthropic API Key'); return; }
+
+  setLoading('btnAnalyzeManual', true);
+  hideResults();
+
+  try {
+    const ref = document.getElementById('mRef').value;
+    const amount = document.getElementById('mAmount').value;
+    const dur = document.getElementById('mDuration').value;
+    const cat = document.getElementById('mCategory').value;
+    const method = document.getElementById('mMethod').value;
+    const desc = document.getElementById('mDesc').value;
+
+    const userText = `Проанализируй закупочный запрос КПО:
+Тип: ${type}
+Референс: ${ref || 'не указан'}
+Сумма: ${amount ? '$' + Number(amount).toLocaleString() : 'не указана'}
+Срок: ${dur ? dur + ' мес.' : 'не указан'}
+Категория: ${cat || 'не указана'}
+Метод закупа: ${method || 'не указан'}
+Описание: ${desc || 'не указано'}
+
+Верни результат в указанном JSON-формате.`;
+
+    const messages = [{ role: 'user', content: userText }];
+    const raw = await callClaude(messages);
+    const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0]);
+    currentAnalysis = json;
+    renderResults(json);
+  } catch(e) {
+    showError('manualError', e.message);
+  } finally {
+    setLoading('btnAnalyzeManual', false);
+  }
+}
+
+function hideResults() {
+  const r = document.getElementById('results');
+  r.classList.remove('visible');
+  document.getElementById('actionOutput').classList.remove('visible');
+}
+
+function renderResults(d) {
+  // Verdict
+  const banner = document.getElementById('verdictBanner');
+  banner.className = 'verdict-banner';
+  const map = { 'ОДОБРИТЬ': ['approve','✅','#27ae60'], 'ОТКЛОНИТЬ': ['reject','❌','#c0392b'], 'НА ДОРАБОТКУ': ['rework','⚠️','#e67e22'] };
+  const [cls, icon, color] = map[d.verdict] || ['rework','⚠️','#e67e22'];
+  banner.classList.add(cls);
+  document.getElementById('verdictIcon').textContent = icon;
+  document.getElementById('verdictLabel').textContent = d.verdict;
+  document.getElementById('verdictLabel').style.color = color;
+  document.getElementById('verdictReason').textContent = d.verdict_reason || '';
+
+  // Meta
+  const meta = [
+    { label: 'Тип', value: d.type || '—' },
+    { label: 'Референс', value: d.reference || '—' },
+    { label: 'Сумма', value: d.amount_usd ? '$' + Number(d.amount_usd).toLocaleString() : '—' },
+    { label: 'Срок', value: d.duration_months ? d.duration_months + ' мес.' : '—' },
+    { label: 'Метод', value: d.procurement_method || '—' },
+    { label: 'Уровень утверждения', value: d.approval_level || '—' },
+  ];
+  document.getElementById('metaGrid').innerHTML = meta.map(m =>
+    `<div class="meta-item"><div class="meta-label">${m.label}</div><div class="meta-value">${m.value}</div></div>`
+  ).join('');
+
+  // Criteria
+  document.getElementById('criteriaGrid').innerHTML = (d.criteria || []).map(c => `
+    <div class="criterion">
+      <div class="criterion-name">${c.name}</div>
+      <div class="criterion-score">${c.score}/10</div>
+      <div class="score-bar"><div class="score-fill" style="width:${c.score*10}%"></div></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;">${c.comment || ''}</div>
+    </div>`).join('');
+
+  // PSA checks
+  const checkIcons = { ok: '✓', warn: '⚠', fail: '✗' };
+  document.getElementById('checksList').innerHTML = (d.psa_checks || []).map(c => `
+    <div class="check-item ${c.status}">
+      <span class="check-icon">${checkIcons[c.status] || '?'}</span>
+      <div><strong>${c.name}</strong>${c.note ? ` — ${c.note}` : ''}</div>
+    </div>`).join('');
+
+  // Risks
+  const levelMap = { high: 'Высокий', medium: 'Средний', low: 'Низкий' };
+  document.getElementById('risksList').innerHTML = (d.risks || []).map(r => `
+    <div class="risk-item ${r.level}">
+      <span class="risk-badge ${r.level}">${levelMap[r.level] || r.level}</span>
+      <div><strong>${r.title}</strong><div style="color:var(--muted);margin-top:3px;">${r.description}</div></div>
+    </div>`).join('');
+
+  // Questions
+  document.getElementById('questionsList').innerHTML = (d.questions || []).map(q =>
+    `<div class="question-item">${q}</div>`).join('');
+
+  // Alternative
+  if (d.alternative) {
+    document.getElementById('altTitle').style.display = 'block';
+    document.getElementById('altBox').style.display = 'block';
+    document.getElementById('altBox').textContent = d.alternative;
+  } else {
+    document.getElementById('altTitle').style.display = 'none';
+    document.getElementById('altBox').style.display = 'none';
+  }
+
+  // Recommendation
+  document.getElementById('recommendationBox').textContent = d.recommendation || '';
+
+  document.getElementById('results').classList.add('visible');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function generateAction(type) {
+  if (!currentAnalysis) return;
+  const key = getApiKey();
+  if (!key) { alert('Введите API Key'); return; }
+
+  const out = document.getElementById('actionOutput');
+  out.textContent = 'Формирую...';
+  out.classList.add('visible');
+
+  const prompts = {
+    memo: `На основе анализа закупочного запроса составь одностраничный Memo для протокола заседания Комитета по закупкам КПО. Включи: дату, референс, тип, сумму, вердикт, ключевые основания, условия (если есть), подпись члена комитета (заглушка). Формат — деловой документ на русском языке.`,
+    conditions: `На основе анализа составь список конкретных условий, которые Комитет должен потребовать от инициатора для снижения выявленных рисков. Формат: пронумерованный список с конкретными действиями и сроками.`,
+    position: `На основе анализа подготовь позицию члена Комитета для выступления. Включи: краткое резюме запроса, аргументы ЗА, аргументы ПРОТИВ, итоговую позицию. Объём — не более одной страницы.`
+  };
+
+  try {
+    const summary = JSON.stringify(currentAnalysis, null, 2);
+    const messages = [{
+      role: 'user',
+      content: `Результаты анализа:\n${summary}\n\n${prompts[type]}`
+    }];
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-calls': 'true'
+      },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2048, messages })
+    });
+    const data = await resp.json();
+    out.textContent = data.content[0].text;
+  } catch(e) {
+    out.textContent = 'Ошибка: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>
